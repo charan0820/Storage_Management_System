@@ -1,0 +1,59 @@
+# StoreWatch configuration
+# Single source of truth for thresholds, device/shelf mapping, and
+# communication settings. Both firmware and backend should stay
+# consistent with this file (firmware only needs the wifi/mqtt section;
+# thresholds are enforced backend-side, see Section 6/30 of the spec).
+
+app:
+  name: StoreWatch
+  timezone: UTC
+
+# --- Shelf classification thresholds (distance sensor, cm) ---
+# THESE ARE PLACEHOLDERS. Calibrate experimentally per Section 6/30
+# before relying on them for the demo.
+thresholds:
+  full_max_cm: 5        # distance < this          -> FULL
+  low_stock_max_cm: 20   # this <= distance < below -> LOW_STOCK
+  # distance >= low_stock_max_cm                    -> EMPTY
+
+# --- Data filtering ---
+filtering:
+  moving_average_window: 5   # number of samples averaged, see Section 7
+
+# --- Device health ---
+device_health:
+  offline_after_seconds: 60  # no reading in this window -> OFFLINE
+
+# --- Communication ---
+mqtt:
+  broker_host: "localhost"
+  broker_port: 1883
+  topic: "storewatch/telemetry"
+
+wifi:
+  ssid: "YOUR_WIFI_SSID"
+  password: "YOUR_WIFI_PASSWORD"
+
+backend:
+  host: "0.0.0.0"
+  port: 5000
+  http_ingest_endpoint: "/api/readings"
+
+database:
+  path: "backend/database/storewatch.db"
+
+# --- Shelf / product mapping (Section 23) ---
+# Prototype maps each shelf to a known product; no computer vision needed.
+shelves:
+  SHELF_01:
+    product: "Coca-Cola"
+    device_id: "ESP32_01"
+    sensor_type: "ultrasonic"
+  SHELF_02:
+    product: "Biscuits"
+    device_id: "ESP32_01"       # simulated shelf, Section 31
+    sensor_type: "simulated"
+  SHELF_03:
+    product: "Shampoo"
+    device_id: "ESP32_01"       # simulated shelf, Section 31
+    sensor_type: "simulated"

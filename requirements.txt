@@ -1,0 +1,15 @@
+# Backend
+flask==3.0.3
+flask-cors==4.0.1
+paho-mqtt==1.6.1
+
+# Dashboard
+streamlit==1.38.0
+pandas==2.2.2
+plotly==5.23.0
+
+# Analytics
+numpy==1.26.4
+
+# Testing
+pytest==8.3.2
