@@ -46,7 +46,13 @@ void loop() {
   }
   lastReadTime = now;
 
+  // Reliability: retry once before reporting a failed read, since a
+  // single missed echo is common and shouldn't flip status to UNKNOWN.
   float raw = readDistance();
+  if (raw < 0) {
+    delay(50);
+    raw = readDistance();
+  }
 
   if (raw < 0) {
     // Sensor failure — publish a NaN-ish sentinel and let the backend

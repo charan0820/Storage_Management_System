@@ -16,7 +16,6 @@ from backend.database.db import init_db
 from backend.routes.sensor_routes import sensor_bp
 from backend.routes.alert_routes import alert_bp
 from backend.models.readings import get_all_latest_readings
-from backend.services.mqtt_listener import start_mqtt_listener
 
 # Device considered OFFLINE if no reading received within this window.
 # Keep in sync with config.yaml -> device_health.offline_after_seconds.
@@ -28,7 +27,6 @@ def create_app() -> Flask:
     CORS(app)
 
     init_db()
-    start_mqtt_listener()
 
     app.register_blueprint(sensor_bp)
     app.register_blueprint(alert_bp)

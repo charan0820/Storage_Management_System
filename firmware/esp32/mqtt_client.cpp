@@ -51,10 +51,20 @@ void setupConnectivity() {
   connectMQTT();
 }
 
+// Reliability: avoid hammering the broker with a blocking connect()
+// call on every loop() iteration when it's down.
+static const unsigned long RECONNECT_INTERVAL_MS = 5000;
+static unsigned long lastReconnectAttempt = 0;
+
 void ensureConnected() {
   connectWiFi();
   if (!mqttClient.connected()) {
-    connectMQTT();
+    unsigned long now = millis();
+    if (now - lastReconnectAttempt >= RECONNECT_INTERVAL_MS) {
+      lastReconnectAttempt = now;
+      connectMQTT();
+    }
+    return;
   }
   mqttClient.loop();
 }

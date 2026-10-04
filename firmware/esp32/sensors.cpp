@@ -9,6 +9,11 @@ static const int ECHO_PIN = 18;
 // "no product detected" territory anyway.
 static const unsigned long TIMEOUT_US = 30000UL; // ~5m round trip
 
+// Calibration offset (cm), measured empirically per Section 6: place an
+// object at a known distance, compare to raw reading, set the delta here.
+// Corrects for sensor mounting offset / housing thickness.
+static const float CALIBRATION_OFFSET_CM = 0.0f; // TODO: set from bench test
+
 void initSensor() {
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
@@ -32,5 +37,5 @@ float readDistance() {
 
   // Speed of sound ~0.0343 cm/us, divide by 2 for round trip
   float distanceCm = (duration * 0.0343f) / 2.0f;
-  return distanceCm;
+  return distanceCm + CALIBRATION_OFFSET_CM;
 }
