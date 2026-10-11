@@ -7,3 +7,8 @@ env/
 .idea/
 data/
 node_modules/
+firmware/esp32/secrets.h
+firmware/esp32/.pio/
+backend/database/*.db
+backend/database/*.db-*
+.pytest_cache/

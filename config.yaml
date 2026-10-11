@@ -51,9 +51,9 @@ shelves:
     sensor_type: "ultrasonic"
   SHELF_02:
     product: "Biscuits"
-    device_id: "ESP32_01"       # simulated shelf, Section 31
-    sensor_type: "simulated"
+    device_id: "ESP32_01"       # same board, independent sensor
+    sensor_type: "ultrasonic"
   SHELF_03:
     product: "Shampoo"
-    device_id: "ESP32_01"       # simulated shelf, Section 31
-    sensor_type: "simulated"
+    device_id: "ESP32_01"       # same board, independent sensor
+    sensor_type: "ultrasonic"

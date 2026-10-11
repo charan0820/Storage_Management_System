@@ -27,7 +27,7 @@ def post_reading():
         }
     """
     payload = request.get_json(silent=True)
-    if not payload:
+    if not isinstance(payload, dict) or not payload:
         return jsonify({"error": "Invalid or missing JSON body"}), 400
 
     required = {"device_id", "shelf_id", "distance_cm"}
@@ -64,5 +64,5 @@ def get_all_readings():
 @sensor_bp.route("/api/readings/<shelf_id>/history", methods=["GET"])
 def get_shelf_history(shelf_id):
     """Recent reading history for a shelf — powers historical charts."""
-    limit = request.args.get("limit", default=200, type=int)
+    limit = max(1, min(2000, request.args.get("limit", default=200, type=int)))
     return jsonify(get_history(shelf_id, limit=limit))

@@ -31,7 +31,10 @@ def generate_alert(shelf_id: str, status: str) -> dict | None:
 
         if status in ALERTABLE_STATUSES:
             if open_alert is not None:
-                # Already alerted and still unresolved -> no duplicate.
+                if open_alert["alert_type"] != status:
+                    conn.execute("UPDATE alerts SET alert_type=?, message=? WHERE id=?",
+                                 (status, _build_message(shelf_id, status), open_alert["id"]))
+                    conn.commit()
                 return None
 
             message = _build_message(shelf_id, status)
@@ -53,8 +56,8 @@ def generate_alert(shelf_id: str, status: str) -> dict | None:
                 "resolved": 0,
             }
 
-        else:
-            # status is FULL/UNKNOWN -> resolve any open alert.
+        elif status in {"FULL", "NORMAL"}:
+            # Only measured recovery resolves a stock alert.
             if open_alert is not None:
                 conn.execute(
                     "UPDATE alerts SET resolved = 1 WHERE id = ?",

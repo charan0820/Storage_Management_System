@@ -1,7 +1,7 @@
 """StoreWatch backend entry point.
 
 Run with:
-    python backend/app.py
+    python -m backend.app
 
 This is the source of truth for shelf status (Section 34) — the ESP32
 only reports sensor data, and the dashboard only reads from this API.
@@ -9,8 +9,10 @@ only reports sensor data, and the dashboard only reads from this API.
 
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify
-from flask_cors import CORS
+from flask import Flask, jsonify, request, render_template
+from backend.config import API_KEY, OFFLINE_SECONDS
+from backend.routes.shelf_routes import shelf_bp
+import hmac
 
 from backend.database.db import init_db
 from backend.routes.sensor_routes import sensor_bp
@@ -19,17 +21,29 @@ from backend.models.readings import get_all_latest_readings
 
 # Device considered OFFLINE if no reading received within this window.
 # Keep in sync with config.yaml -> device_health.offline_after_seconds.
-OFFLINE_AFTER_SECONDS = 60
+OFFLINE_AFTER_SECONDS = OFFLINE_SECONDS
 
 
 def create_app() -> Flask:
     app = Flask(__name__)
-    CORS(app)
+    app.config["MAX_CONTENT_LENGTH"] = 8192
+    # Same-origin browser dashboard; optional device write key on a trusted LAN.
+    @app.before_request
+    def protect_writes():
+        if API_KEY and request.method in {"POST", "PUT", "DELETE"}:
+            if not hmac.compare_digest(request.headers.get("X-API-Key", ""), API_KEY):
+                return jsonify(error="Invalid API key"), 401
+
+    @app.get("/")
+    def dashboard():
+        return render_template("index.html")
+
 
     init_db()
 
     app.register_blueprint(sensor_bp)
     app.register_blueprint(alert_bp)
+    app.register_blueprint(shelf_bp)
 
     @app.route("/health", methods=["GET"])
     def health():
@@ -69,4 +83,4 @@ def _age_seconds(timestamp_str: str, now: datetime):
 app = create_app()
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=False)

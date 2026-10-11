@@ -10,6 +10,7 @@ def test_end_to_end_reading_produces_status():
 
     assert client.get("/health").status_code == 200
 
+    client.put("/api/shelves/SHELF_01", json={"full_cm": 5, "empty_cm": 30})
     r = client.post(
         "/api/readings",
         json={

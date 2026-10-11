@@ -1,91 +1,100 @@
-# StoreWatch Hardware
+# Three-shelf test rig
 
-## Required components
+## Parts and planning budget (India)
+These are **planning allowances**, not a seller quotation; shipping is additional.
+The HC-SR04 vendor listing checked on 11 October 2026 was ₹79 per module.
+Choose a classic ESP32-WROOM-32 DevKit / ESP32 Dev Module with GPIOs listed below,
+not an ESP32-C3 with a different pinout.
 
-- ESP32 dev board
-- Ultrasonic sensor (HC-SR04) OR IR distance sensor
-- Breadboard
-- Jumper wires
-- USB power supply
+| Component | Quantity | Budget allowance |
+|---|---:|---:|
+| ESP32 DevKit (classic ESP32, USB) | 1 | ₹350–550 |
+| HC-SR04 5 V ultrasonic module | 3 | ₹237–300 |
+| 1 kΩ resistor, 1% preferred | 3 | included below |
+| 2 kΩ resistor, 1% preferred | 3 | ₹20–40 for resistor set |
+| Breadboard + jumper wires | 1 set | ₹120–200 |
+| Data-capable USB cable | 1 | ₹50–100, or reuse |
+| Cardboard compartments + sensor mounts | 3 | ₹0–100, or reuse |
+| Existing laptop, Wi-Fi router/hotspot, USB power | existing | ₹0 |
+| **Total planning range** | | **₹777–1,290** |
 
-## Optional components
+No paid services or broker are required. Sensors draw about 15 mA each at 5 V;
+provide a stable USB supply and short leads. Board power pin labels differ: check
+that your DevKit's 5 V/VIN pin provides USB 5 V before using it as the sensor supply.
+Otherwise use a separate regulated 5 V sensor supply with **common ground**. Never
+feed 5 V into the ESP32 3V3 pin; avoid tying two independent 5 V supplies together.
 
-- Load cell + HX711 (weight-based extension)
-- LED / buzzer (local alert indicator)
-- OLED display (on-device status)
-- Servo
-- DHT11/DHT22 (temperature/humidity, not core to shelf monitoring)
+## Pin mapping (matches firmware)
 
-## Recommended sensor: ultrasonic (HC-SR04)
+| Shelf / sensor | Product (editable) | TRIG → ESP32 | ECHO → divider → ESP32 |
+|---|---|---|---|
+| SHELF_01 / HC-SR04 #1 | Coca-Cola | GPIO 25 | GPIO 32 |
+| SHELF_02 / HC-SR04 #2 | Biscuits | GPIO 26 | GPIO 33 |
+| SHELF_03 / HC-SR04 #3 | Shampoo | GPIO 27 | GPIO 34 |
 
-Simple, cheap, easy to demonstrate live. Measures distance from the
-sensor (mounted above/behind the shelf) down to the nearest product or
-the shelf floor.
+All three VCC pins connect to regulated **5 V**. All three GND pins connect to ESP32
+GND. The pins are GPIO numbers, not header positions. GPIO34 is input-only, which
+is suitable for Echo. This map is for the classic ESP32 DevKit.
 
-### Wiring (HC-SR04 → ESP32)
+For **each** sensor, wire this divider:
 
-| HC-SR04 pin | ESP32 pin |
-|---|---|
-| VCC | 5V (or 3.3V-tolerant variant) |
-| GND | GND |
-| TRIG | GPIO 5 |
-| ECHO | GPIO 18 (use a voltage divider if the sensor is 5V logic) |
+1. Sensor ECHO → **1 kΩ resistor** → junction.
+2. Junction → assigned ESP32 Echo GPIO.
+3. Junction → **2 kΩ resistor** → common GND.
 
-These pin numbers match `firmware/esp32/sensors.cpp` — update both if
-you wire it differently.
+The nominal junction voltage is `5 × 2/(1+2) = 3.33 V`.
+**A standard HC-SR04 Echo must not connect directly to an ESP32 GPIO.**
+TRIG connects directly from the assigned 3.3 V ESP32 output; test your sensor clone
+accepts that trigger level. If it does not, use a suitable 3.3→5 V logic buffer for
+TRIG; retain Echo dividers. Use a common ground in every case.
 
-### How it works
+![Three-sensor wiring](wiring.png)
 
-```
-Shelf
-────────────────────
-      Product
-         ↓
-      Sensor
-         ↓
-    Distance
-```
+## Mounting that makes the measurements meaningful
 
-As products are removed, the measured distance increases. The firmware
-sends raw + filtered distance; the **backend** decides FULL/LOW_STOCK/
-EMPTY, not the firmware (see `docs/architecture.md`).
+Build three small rigid compartments, each with one assigned product type. For a
+repeatable semester demonstration, use identical flat boxes / packets stacked
+vertically in each compartment. Mount each sensor on the ceiling, pointing down
+at the flat top of its stack. Label the compartments with their shelf IDs.
 
-## Alternative: weight-based (load cell + HX711)
+- Keep **at least 2 cm** between transducers and even the fullest stack; prefer 5 cm.
+- Use a rigid shelf floor so an empty compartment still returns an echo.
+- Full stack target: around 5 cm sensor-to-product distance; empty compartment:
+  around 30 cm sensor-to-floor distance. These are demo dimensions, not universal calibration.
+- Keep the stack centered and fill the beam with a reasonably flat target.
+- Separate compartments with dividers; aim sensors so they do not face each other.
+- Soft bags, angled surfaces, shelf edges and tiny targets can cause missed echoes.
+- Sensors are triggered sequentially with a 65 ms quiet interval. This reduces,
+  but does not eliminate, crosstalk; verify the physical rig.
 
-More technically interesting but needs calibration per shelf/product
-weight. Recommended only as an extension if a load cell is already on
-hand — not the primary path for a 2-week timeline.
+A single overhead sensor cannot infer the number of bottles arranged side by
+side: removing one bottle may not change nearest-surface height. For realistic
+store shelves, dedicate sensors to constrained lanes or adopt weight sensing later.
+The current application displays **fill estimate**, never a claimed exact item count.
 
-```
-Load Cell → HX711 → ESP32
+## Calibration, per shelf
+1. Stop the simulator. Check serial telemetry says HTTP 201.
+2. Measure actual sensor-to-floor distance with a ruler. Read the dashboard with
+   an empty compartment for 10–20 seconds and compare. Record `empty_cm`.
+3. Add the maximum repeatable stack. Record the sensor-to-top distance as `full_cm`.
+4. Open Assign / calibrate, enter the product and both distances; set low threshold,
+   initially 25%. Settings persist in SQLite and history stays intact.
+5. Try roughly 100%, 50%, 25% and 0% stack heights. Record ruler distances and measured
+   values in docs/testing.md. Adjust mounting and calibration if inconsistent.
+6. Remove items and wait for up to five reporting cycles for the moving average
+   to settle (roughly 10 seconds on a healthy link).
 
-Shelf weight = 5 kg
-Average product weight = 0.5 kg
-Estimated quantity ≈ 10
-```
+`fill% = clamp(100 × (empty_cm − filtered_distance) / (empty_cm − full_cm), 0, 100)`
 
-## Calibration
+This assumes stack height is proportional to remaining stock. It is a demo model.
+At ≤5%: EMPTY; up to configured low threshold: LOW_STOCK; ≥90%: FULL;
+otherwise NORMAL. No echo (-1) gives UNKNOWN; no recent reading gives OFFLINE.
 
-Thresholds in `config.yaml` (`thresholds.full_max_cm`,
-`thresholds.low_stock_max_cm`) are placeholders. To calibrate:
+## Reference sources
+- HC-SR04 datasheet: https://cdn.sparkfun.com/datasheets/Sensors/Proximity/HCSR04.pdf
+  (5 V supply, 2–400 cm range, 10 µs trigger, >60 ms measurement cycle).
+- ESP32 electrical limits: https://documentation.espressif.com/esp32_datasheet_en.html
+- Indicative HC-SR04 listing: https://robu.in/product-category/best-prices/
 
-1. Place a full shelf in front of the sensor, record the distance.
-2. Remove products incrementally, recording distance at each stage.
-3. Pick thresholds that separate FULL / LOW_STOCK / EMPTY based on the
-   actual measured ranges — not guessed values.
-4. Update `config.yaml` and `backend/services/monitoring.py`.
-
-## Sensor failure handling
-
-If the sensor returns no echo (timeout), `readDistance()` returns `-1.0`.
-This is published as-is; the backend maps any negative value to
-`UNKNOWN`, never to `EMPTY` (a disconnected sensor is not the same as
-an empty shelf).
-
-## Multi-shelf simulation
-
-With one physical sensor, additional shelves can be simulated using
-`data/sample_readings.csv` and `data/load_sample_data.py` to demonstrate
-a full store on the dashboard. Simulated data must be clearly
-distinguished from real sensor data (see `sensor_type: "simulated"` in
-`config.yaml`) and never presented as a live measurement.
+The three sensors, divider values, pin assignment and stack model are the design
+choices for this prototype. Budget lines other than the sensor listing are allowances.

@@ -6,11 +6,23 @@ Schema matches Section 15 of the project spec:
 """
 
 import sqlite3
+import os
 from pathlib import Path
 
-DB_PATH = Path(__file__).resolve().parent / "storewatch.db"
+DB_PATH = Path(os.environ.get("STOREWATCH_DB", str(Path(__file__).resolve().parent / "storewatch.db")))
 
 SCHEMA = """
+CREATE TABLE IF NOT EXISTS shelves (
+    shelf_id TEXT PRIMARY KEY,
+    product TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    full_cm REAL NOT NULL DEFAULT 5,
+    empty_cm REAL NOT NULL DEFAULT 30,
+    low_percent REAL NOT NULL DEFAULT 25,
+    calibrated INTEGER NOT NULL DEFAULT 0,
+    updated_at TEXT NOT NULL DEFAULT ''
+);
+
 CREATE TABLE IF NOT EXISTS sensor_readings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     device_id TEXT NOT NULL,
@@ -52,6 +64,10 @@ def init_db():
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)
+        from backend.config import CONFIG
+        for shelf_id, shelf in CONFIG["shelves"].items():
+            conn.execute("INSERT OR IGNORE INTO shelves (shelf_id, product, device_id) VALUES (?, ?, ?)",
+                         (shelf_id, shelf["product"], shelf["device_id"]))
         conn.commit()
     finally:
         conn.close()

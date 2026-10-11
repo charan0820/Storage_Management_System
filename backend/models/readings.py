@@ -63,7 +63,7 @@ def get_latest_reading(shelf_id: str) -> Optional[dict]:
             """
             SELECT * FROM sensor_readings
             WHERE shelf_id = ?
-            ORDER BY timestamp DESC
+            ORDER BY id DESC
             LIMIT 1
             """,
             (shelf_id,),
@@ -80,13 +80,9 @@ def get_all_latest_readings() -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT sr.* FROM sensor_readings sr
-            INNER JOIN (
-                SELECT shelf_id, MAX(timestamp) AS max_ts
-                FROM sensor_readings
-                GROUP BY shelf_id
-            ) latest
-            ON sr.shelf_id = latest.shelf_id AND sr.timestamp = latest.max_ts
+            SELECT * FROM sensor_readings WHERE id IN (
+                SELECT MAX(id) FROM sensor_readings GROUP BY shelf_id
+            )
             """
         ).fetchall()
         return [dict(r) for r in rows]
@@ -102,7 +98,7 @@ def get_history(shelf_id: str, limit: int = 200) -> list[dict]:
             """
             SELECT * FROM sensor_readings
             WHERE shelf_id = ?
-            ORDER BY timestamp DESC
+            ORDER BY id DESC
             LIMIT ?
             """,
             (shelf_id, limit),

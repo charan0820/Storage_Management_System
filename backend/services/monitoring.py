@@ -9,15 +9,20 @@ Interfaces here follow Section 13 of the spec:
 """
 
 from collections import defaultdict
+import math
+import threading
+from backend.config import CONFIG
+from backend.database.db import get_connection
 from datetime import datetime, timezone
 
 from backend.models.readings import Reading, save_reading
 
 # --- Configuration (mirror config.yaml; see Section 6) ---
-# TODO: load these from config.yaml instead of hardcoding once calibrated.
-FULL_MAX_CM = 5
-LOW_STOCK_MAX_CM = 20
-MOVING_AVERAGE_WINDOW = 5
+# Legacy unconfigured shelf thresholds; registered shelves use SQLite calibration.
+FULL_MAX_CM = CONFIG["thresholds"]["full_max_cm"]
+LOW_STOCK_MAX_CM = CONFIG["thresholds"]["low_stock_max_cm"]
+MOVING_AVERAGE_WINDOW = CONFIG["filtering"]["moving_average_window"]
+_lock = threading.RLock()
 
 # Per-shelf rolling window of recent raw values, used for filtering.
 # NOTE: in-memory only — fine for a single-process prototype. A
@@ -27,6 +32,7 @@ _recent_values: dict[str, list[float]] = defaultdict(list)
 # Per-shelf last known status, used for alert deduplication
 # (services/alert_service.py) and to detect state transitions.
 _last_status: dict[str, str] = {}
+_sources = {}
 
 
 def filter_sensor_data(values: list[float]) -> float:
@@ -68,15 +74,58 @@ def process_reading(reading: dict) -> dict:
     shelf_id = reading["shelf_id"]
     raw_value = float(reading["distance_cm"])
 
-    _recent_values[shelf_id].append(raw_value)
-    # Cap window growth
-    if len(_recent_values[shelf_id]) > MOVING_AVERAGE_WINDOW:
-        _recent_values[shelf_id] = _recent_values[shelf_id][-MOVING_AVERAGE_WINDOW:]
-
-    filtered_value = filter_sensor_data(_recent_values[shelf_id])
-    status = classify_shelf(filtered_value if raw_value >= 0 else -1)
-
+    if not isinstance(shelf_id, str) or not shelf_id.strip() or len(shelf_id) > 64:
+        raise ValueError("shelf_id must be a nonempty string up to 64 characters")
+    if not isinstance(reading["device_id"], str) or not reading["device_id"].strip():
+        raise ValueError("device_id must be a nonempty string")
+    if not math.isfinite(raw_value) or (raw_value != -1 and not 2 <= raw_value <= 400):
+        raise ValueError("distance_cm must be 2..400 cm, or -1 for a sensor fault")
+    sensor_type = reading.get("sensor_type", "unknown")
+    if sensor_type not in {"ultrasonic", "simulated", "unknown"}:
+        raise ValueError("Invalid sensor_type")
+    conn = get_connection()
+    try:
+        shelf = conn.execute("SELECT * FROM shelves WHERE shelf_id=?", (shelf_id,)).fetchone()
+    finally:
+        conn.close()
+    if shelf and shelf["device_id"] != reading["device_id"]:
+        raise ValueError("Device is not assigned to this shelf")
+    # Firmware omits timestamp. Legacy ISO timestamps remain accepted; reject uptime.
     timestamp = reading.get("timestamp") or datetime.now(timezone.utc).isoformat()
+    try:
+        parsed = datetime.fromisoformat(timestamp)
+    except (ValueError, TypeError):
+        raise ValueError("timestamp must be an ISO-8601 string, not device uptime")
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    if parsed > datetime.now(timezone.utc):
+        raise ValueError("timestamp cannot be in the future")
+    timestamp = parsed.astimezone(timezone.utc).isoformat()
+
+    # Faults must never pollute the filter or imply a restock.
+    with _lock:
+        window = _recent_values[shelf_id]
+        if raw_value < 0:
+            window.clear()
+            filtered_value, status = -1.0, "UNKNOWN"
+        else:
+            # Do not mix simulator readings with hardware or across long outages.
+            key = (reading["device_id"], sensor_type)
+            now_s = datetime.now(timezone.utc).timestamp()
+            prior = _sources.get(shelf_id)
+            if prior is None or prior[0] != key or now_s - prior[1] > 60:
+                window.clear()
+            _sources[shelf_id] = (key, now_s)
+            window.append(raw_value)
+            del window[:-MOVING_AVERAGE_WINDOW]
+            filtered_value = filter_sensor_data(window)
+            status = classify_shelf(filtered_value)
+            if shelf:
+                status = "UNCALIBRATED"
+                if shelf["calibrated"]:
+                    fill = max(0, min(100, 100 * (shelf["empty_cm"] - filtered_value) /
+                                                 (shelf["empty_cm"] - shelf["full_cm"])))
+                    status = "EMPTY" if fill <= 5 else "LOW_STOCK" if fill <= shelf["low_percent"] else "FULL" if fill >= 90 else "NORMAL"
 
     processed = Reading(
         device_id=reading["device_id"],
