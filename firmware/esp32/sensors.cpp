@@ -1,7 +1,7 @@
 #include <Arduino.h>
 #include "sensors.h"
-static const int TRIG_PINS[SENSOR_COUNT] = {25, 26, 27};
-static const int ECHO_PINS[SENSOR_COUNT] = {32, 33, 34};
+static const int TRIG_PINS[SENSOR_COUNT] = {25, 26};
+static const int ECHO_PINS[SENSOR_COUNT] = {32, 33};
 void initSensor() {
   for (int i = 0; i < SENSOR_COUNT; ++i) {
     pinMode(TRIG_PINS[i], OUTPUT);

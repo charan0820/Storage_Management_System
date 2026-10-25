@@ -11,7 +11,8 @@ Interfaces here follow Section 13 of the spec:
 from collections import defaultdict
 import math
 import threading
-from backend.config import CONFIG
+from functools import wraps
+from backend.config import CONFIG, OFFLINE_SECONDS
 from backend.database.db import get_connection
 from datetime import datetime, timezone
 
@@ -33,6 +34,15 @@ _recent_values: dict[str, list[float]] = defaultdict(list)
 # (services/alert_service.py) and to detect state transitions.
 _last_status: dict[str, str] = {}
 _sources = {}
+
+
+def synchronized(function):
+    """Serialize row settings and ingestion so a sample cannot use old calibration."""
+    @wraps(function)
+    def wrapped(*args, **kwargs):
+        with _lock:
+            return function(*args, **kwargs)
+    return wrapped
 
 
 def filter_sensor_data(values: list[float]) -> float:
@@ -72,6 +82,8 @@ def process_reading(reading: dict) -> dict:
         { device_id, shelf_id, sensor_value, filtered_value, status, timestamp }
     """
     shelf_id = reading["shelf_id"]
+    if isinstance(reading['distance_cm'], bool):
+        raise ValueError('distance_cm must be a number, not a boolean')
     raw_value = float(reading["distance_cm"])
 
     if not isinstance(shelf_id, str) or not shelf_id.strip() or len(shelf_id) > 64:
@@ -90,6 +102,12 @@ def process_reading(reading: dict) -> dict:
         conn.close()
     if shelf and shelf["device_id"] != reading["device_id"]:
         raise ValueError("Device is not assigned to this shelf")
+    if shelf and not shelf['active']:
+        raise ValueError('This row is retired')
+    if shelf:
+        for key in ('sensor_id', 'product_tag'):
+            if key in reading and reading[key] != shelf[key]:
+                raise ValueError(f'{key} does not match assignment; refresh device config')
     # Firmware omits timestamp. Legacy ISO timestamps remain accepted; reject uptime.
     timestamp = reading.get("timestamp") or datetime.now(timezone.utc).isoformat()
     try:
@@ -101,10 +119,13 @@ def process_reading(reading: dict) -> dict:
     if parsed > datetime.now(timezone.utc):
         raise ValueError("timestamp cannot be in the future")
     timestamp = parsed.astimezone(timezone.utc).isoformat()
+    current = ((datetime.now(timezone.utc) - parsed).total_seconds() <= OFFLINE_SECONDS
+               and (not shelf or not shelf['updated_at'] or timestamp > shelf['updated_at']))
 
     # Faults must never pollute the filter or imply a restock.
     with _lock:
-        window = _recent_values[shelf_id]
+        # Keep historical imports without feeding them into the live filter.
+        window = _recent_values[shelf_id] if current else []
         if raw_value < 0:
             window.clear()
             filtered_value, status = -1.0, "UNKNOWN"
@@ -113,9 +134,10 @@ def process_reading(reading: dict) -> dict:
             key = (reading["device_id"], sensor_type)
             now_s = datetime.now(timezone.utc).timestamp()
             prior = _sources.get(shelf_id)
-            if prior is None or prior[0] != key or now_s - prior[1] > 60:
+            if prior is None or prior[0] != key or now_s - prior[1] > OFFLINE_SECONDS:
                 window.clear()
-            _sources[shelf_id] = (key, now_s)
+            if current:
+                _sources[shelf_id] = (key, now_s)
             window.append(raw_value)
             del window[:-MOVING_AVERAGE_WINDOW]
             filtered_value = filter_sensor_data(window)

@@ -21,8 +21,8 @@ def send(path, payload, method='POST'):
         return json.load(response)
 if a.calibrate_demo:
     try:
-        for n in range(1, 4):
-            send(f'/api/shelves/SHELF_0{n}', {'full_cm': 5, 'empty_cm': 30, 'low_percent': 25}, 'PUT')
+        for n in range(1, 3):
+            send(f'/api/shelves/SHELF_0{n}', {'full_cm': 5, 'empty_cm': 30, 'low_percent': 25, 'calibration_source': 'demo'}, 'PUT')
     except (urllib.error.URLError, TimeoutError) as e:
         p.exit(1, f'Calibration failed: {e}. Start python -m backend.app first and verify the URL/key.\n')
     print('Synthetic calibration applied. Recalibrate before using physical sensors.')
@@ -30,7 +30,7 @@ print('SIMULATOR: all telemetry is labeled simulated; stop this before connectin
 try:
     cycle = 0
     while not a.cycles or cycle < a.cycles:
-        for n in range(1, 4):
+        for n in range(1, 3):
             cm = {'full': 5, 'low': 26, 'empty': 30, 'fault': -1}.get(a.scenario)
             if cm is None:
                 cm = 5 + 25 * (1 + math.sin(cycle / 6 + n * 2)) / 2

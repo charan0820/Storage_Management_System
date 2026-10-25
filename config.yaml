@@ -1,8 +1,7 @@
 # StoreWatch configuration
 # Single source of truth for thresholds, device/shelf mapping, and
-# communication settings. Both firmware and backend should stay
-# consistent with this file (firmware only needs the wifi/mqtt section;
-# thresholds are enforced backend-side, see Section 6/30 of the spec).
+# communication settings. The ESP32 fetches row assignments from the HTTP
+# manifest; firmware Wi-Fi credentials live only in ignored secrets.h.
 
 app:
   name: StoreWatch
@@ -42,18 +41,22 @@ backend:
 database:
   path: "backend/database/storewatch.db"
 
-# --- Shelf / product mapping (Section 23) ---
-# Prototype maps each shelf to a known product; no computer vision needed.
+# --- Rows of the single RACK_01 cardboard shelf ---
+# SHELF_01/02 are retained as legacy row channel IDs.
 shelves:
   SHELF_01:
-    product: "Coca-Cola"
+    product: "Tea boxes"
+    product_tag: "TEA-001"
+    parent_shelf: "RACK_01"
+    row_number: 1
+    sensor_id: "US_01"
     device_id: "ESP32_01"
     sensor_type: "ultrasonic"
   SHELF_02:
     product: "Biscuits"
-    device_id: "ESP32_01"       # same board, independent sensor
-    sensor_type: "ultrasonic"
-  SHELF_03:
-    product: "Shampoo"
+    product_tag: "BIS-002"
+    parent_shelf: "RACK_01"
+    row_number: 2
+    sensor_id: "US_02"
     device_id: "ESP32_01"       # same board, independent sensor
     sensor_type: "ultrasonic"

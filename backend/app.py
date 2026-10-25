@@ -9,7 +9,8 @@ only reports sensor data, and the dashboard only reads from this API.
 
 from datetime import datetime, timezone
 
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_from_directory
+from backend.config import ROOT
 from backend.config import API_KEY, OFFLINE_SECONDS
 from backend.routes.shelf_routes import shelf_bp
 import hmac
@@ -37,6 +38,16 @@ def create_app() -> Flask:
     @app.get("/")
     def dashboard():
         return render_template("index.html")
+
+    @app.get('/setup-guide')
+    def setup_guide():
+        return render_template('setup.html')
+
+    @app.get('/hardware/<name>')
+    def hardware_file(name):
+        if name not in {'hardware.md', 'wiring.svg', 'prototype.svg'}:
+            return jsonify(error='Unknown guide asset'), 404
+        return send_from_directory(ROOT / 'docs', name)
 
 
     init_db()

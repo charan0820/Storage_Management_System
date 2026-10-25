@@ -1,72 +1,85 @@
-# Test and semester demonstration
+# Verification and demonstration checklist
 
-## Automated verification
-Run from project root: `python -m pytest -q`. Tests isolate SQLite in temporary
-folders and do not use the development database. Coverage includes independent
-shelf calibration, missing / malformed JSON, invalid ranges and NaN, wrong devices,
-faults and recovery, source switching, stale shelf health, retaining historical
-readings across calibration, duplicate timestamps and serving dashboard assets.
+## Software checks completed on 22 October 2026
 
-## Verification performed for this extension
-- Automated tests: **39 passed** on 11 October 2026.
-- Real HTTP simulator → Flask → SQLite → shelf-summary round trip: passed for all three shelves.
-- JavaScript syntax check (`node --check`): passed.
-- Git whitespace check: passed.
-- Wiring SVG rendered and visually inspected.
-- Browser layout / interaction QA: not performed in this environment.
-- Firmware build attempted with PlatformIO: not verified. The downloaded ESP32
-  toolchain failed its checksum check; no unverified compiler package was accepted.
-  Run PlatformIO Build on your laptop with a working package mirror before flashing.
-- Physical ESP32 / sensors: not attached; not physically verified.
+- **55 tests passed**, using the project .venv with requirements-device.txt installed.
+- `node --check backend/static/app.js` passed.
+- `git diff --check` passed (Git emits normal Windows line-ending notices).
+- PlatformIO **release firmware build succeeded** for `esp32dev`, Espressif32 6.9.0,
+  ArduinoJson 7.2.1. RAM 45,908 / 327,680 bytes (14.0%); flash 800,973 / 1,310,720
+  bytes (61.1%). Build used the ignored secrets.h configuration; provide your own
+  Wi-Fi credentials and laptop IP before flashing. No hardware was flashed.
+- Browser checked at widths 320, 768, 1024 and 1440 pixels; no horizontal overflow.
+  Dark theme was visually reviewed; the CSS includes light and dark system palettes.
+- Browser interactions verified: row assignment save, invalid full/empty calibration,
+  independent simulation, empty alert, fault preserving an existing alert, chart
+  updates, loading/empty states, and full setup-guide navigation with both images loaded.
+- GPIO diagram and cardboard layout rendered and visually reviewed. PNG wiring export
+  now matches the current SVG. Dashboard screenshot is in `dashboard-preview.png`.
+- Browser verification uses `data/prototype_demo.db`, separate from the original
+  bundled database. The original database was restored after initial migration review.
 
-## Live software test
-1. Start `python -m backend.app`.
-2. Open `http://localhost:5000`.
-3. Run `python scripts/simulate.py --calibrate-demo --cycles 5`.
-4. Verify all three cards show SIMULATED DATA and separate stock levels.
-5. Run `python scripts/simulate.py --scenario empty --cycles 6`.
-6. Verify low/empty alerts after the filter settles.
-7. Run `python scripts/simulate.py --scenario fault --cycles 2`.
-8. Verify fault cards have no fill% and previous restock alerts remain.
-9. Run `python scripts/simulate.py --scenario full --cycles 6`.
-10. Verify measured recovery clears alerts. Stop telemetry and wait >60 seconds;
-    all shelves should show Offline, with no current fill estimate.
+Tests cover device health, independent calibration, simulated/hardware source switching,
+fault and recovery, alert deduplication, malformed JSON/numbers/tags, sensor/tag identity,
+reassignment, config manifests, history retention, legacy schema migration, archived
+third-channel history, optional write authentication and setup-asset access restrictions.
+Backdated samples cannot replace a fresh live reading, change current alerts or contaminate the live moving average.
+Settings changes and ingestion share a lock to prevent use of an old calibration.
 
-## Physical test (not performed by the software author)
-The project has no remotely attached physical rig. Compilation and software tests
-cannot prove wiring, power stability, ranging accuracy or crosstalk performance.
-Complete this table with your own measured data before the final demonstration.
+## Repeat checks
 
-| Shelf | Stack state | Ruler cm | Sensor cm | Expected state | Result / observation |
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+node --check backend/static/app.js
+.venv\Scripts\python.exe -m platformio run -d firmware/esp32
+```
+
+## Browser demonstration
+
+1. Start `.venv\Scripts\python.exe -m backend.app`; open http://localhost:5000.
+2. Review the two product rows and open Assign / calibrate. Change a printed tag
+   and name. Keep calibration type set to demo while using synthetic distances.
+3. In Test bench, choose Row 1 and Use demo calibration. Send 5 cm (full), 26 cm
+   (low), 30 cm (empty); repeat up to five samples per change for filtering to settle.
+4. Repeat on Row 2 to show independent sensor channels.
+5. Enable missing echo and send: show Sensor fault, no fill percentage, and retained
+   refill alert. Disable it, send full samples, and show automatic alert resolution.
+6. Stop sending samples; show OFFLINE after 60 seconds, with no current fill estimate.
+7. Open Hardware & setup and the full guide to show wiring and cardboard construction.
+
+## Physical checks still required
+
+No ESP32/sensor rig is attached to this session. Successful compilation and software
+simulation do not prove wiring, signal voltage, echo quality or mechanical repeatability.
+Build using [hardware.md](hardware.md); inspect wiring with power unplugged. Measure
+both divider junction voltages before connecting them to ESP32 inputs.
+
+Record at least ten readings per state for both rows:
+
+| Row | Follower state | Ruler distance | Sensor mean/range | Expected status | Observations |
 |---|---|---|---|---|---|
-| 01 | Full | | | FULL | |
-| 01 | Half | | | NORMAL | |
-| 01 | Low | | | LOW_STOCK | |
-| 01 | Empty | | | EMPTY | |
-| 02 | Full / half / low / empty | | | | |
-| 03 | Full / half / low / empty | | | | |
+| 1 | Full | | | FULL | |
+| 1 | Half | | | NORMAL | |
+| 1 | Low | | | LOW_STOCK | |
+| 1 | Empty | | | EMPTY | |
+| 2 | Full | | | FULL | |
+| 2 | Half | | | NORMAL | |
+| 2 | Low | | | LOW_STOCK | |
+| 2 | Empty | | | EMPTY | |
 
-For every shelf, try at least 10 readings per state and record mean/range. Verify
-divider junction voltages before connecting Echo to GPIO. Confirm all three sensor
-IDs map to the right compartments by moving one target at a time. Check a sensor
-with no reflecting target reports fault. Power off the whole board and verify
-Offline after 60 seconds. Do not disconnect wires while powered for the demo.
-
-## Presentation sequence (about 3 minutes)
-- Explain one shelf → one manually assigned product → one sensor.
-- Show full readings on three physical shelves (hardware source label).
-- Remove packets from one compartment; show low-stock alert after settling.
-- Empty it; show alert escalating to empty.
-- Refill; show alert resolution.
-- Turn off ESP32; explain Offline after 60 seconds.
-- Explain the limitation: this monitors stack height, not exact grocery item count.
+Move one follower at a time to confirm physical sensor-to-row identity. Test no echo,
+Wi-Fi loss, USB removal and reconnect. Replace synthetic calibration with measured
+full/empty stops and verify settings persist after restarting the server.
 
 ## Troubleshooting
-- HTTP -1 / timeout: confirm laptop IPv4, firewall/private-network rule and Wi-Fi isolation.
-- HTTP 401: API keys do not match.
-- HTTP 400: inspect serial response; check shelf/device identity or invalid payload.
-- Always no echo: check common ground, sensor 5 V supply, pins and divider; aim at flat target.
-- Wrong shelf updates: swap the sensor wiring or correct its firmware mapping.
-- Jumping readings: isolate sensor beams, stabilize mounts, move sidewalls out of beam.
-- Uncalibrated: save measured full and empty distances for that shelf.
-- Incorrect stock level: ensure geometry matches the stack model and recalibrate.
+
+- HTTP timeout: check laptop IPv4, Wi-Fi client isolation and private-network firewall.
+- HTTP 401: match the optional API key in server, browser and firmware.
+- HTTP 400: inspect serial response; stale tags trigger config refresh, wrong sensor or
+  device mappings are rejected. Old three-channel firmware must be replaced.
+- No echoes: inspect 5 V supply, common ground, divider junctions, pin labels and target alignment.
+- Jumping distances: stabilize mounts/followers and keep floor/dividers outside the beam.
+- Wrong fill: confirm the follower moves against remaining products, then remeasure calibration.
+- No product tag on board: verify `/api/devices/ESP32_01/config` and allow ~10 seconds to refresh.
+- Readings become offline: individual test-bench sends are snapshots; send again or run
+  the CLI simulator for sustained software telemetry. Stop it before hardware use.

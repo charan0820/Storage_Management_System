@@ -11,13 +11,13 @@ def calibrate(client, shelf="SHELF_01", full=5, empty=30):
 
 def test_waiting_uncalibrated_then_live():
     c=app.test_client()
-    assert len(c.get("/api/shelves").json)==3
+    assert len(c.get("/api/shelves").json)==2
     assert all(s["status"]=="WAITING" for s in c.get("/api/shelves").json)
     assert send(c).json["status"]=="UNCALIBRATED"
     assert calibrate(c).status_code==200
     assert send(c).json["status"]=="FULL"
     s=c.get("/api/shelves").json[0]
-    assert s["fill_percent"]==100 and s["product"]=="Coca-Cola" and s["online"]
+    assert s["fill_percent"]==100 and s["product"]=="Tea boxes" and s["online"]
 
 def test_shelves_have_independent_calibration():
     c=app.test_client()

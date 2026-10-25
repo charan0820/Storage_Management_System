@@ -1,100 +1,102 @@
-# StoreWatch — low-budget multi-shelf IoT prototype
+# StoreWatch — two-row grocery shelf prototype
 
-An extension of the original Flask / SQLite project for a semester demonstration.
-**One ESP32 DevKit + three HC-SR04 sensors monitor three separately assigned product shelves.**
-No cloud subscription, MQTT broker, extra screen or Raspberry Pi required.
+A functional Flask / SQLite app for **one cardboard shelf with two 30 cm product
+rows**, one ultrasonic sensor per row, controlled by one classic ESP32 DevKit.
+No cloud, MQTT broker or Raspberry Pi required.
 
-## Start the application (Windows / Linux / macOS)
-Run commands from this project directory, with Python 3.10+:
+## Start
 
-```bash
-python -m pip install -r requirements-device.txt
-python -m backend.app
-```
-Open **http://localhost:5000**. Keep this terminal running.
-The browser dashboard and API use the same server. Updates arrive approximately
- every 2 seconds on a healthy network. All settings and telemetry persist in SQLite.
-
-## Try the complete setup without hardware
-In a second terminal:
-
-```bash
-python scripts/simulate.py --calibrate-demo
-```
-This sets **synthetic** 5 cm full / 30 cm empty calibration for all three shelves,
-then cycles them independently through stock levels. Cards explicitly say SIMULATED DATA.
-Other test modes:
-
-```bash
-python scripts/simulate.py --scenario empty --cycles 10
-python scripts/simulate.py --scenario fault --cycles 5
-python scripts/simulate.py --scenario full --cycles 10
-```
-Stop with Ctrl+C. Shelves become OFFLINE after 60 seconds without telemetry.
-Do not run the simulator and ESP32 simultaneously. Replace synthetic calibration
-with your own measurements before using real hardware.
-
-## Connect the actual ESP32
-1. Build the three-shelf rig using [docs/hardware.md](docs/hardware.md) and [docs/wiring.svg](docs/wiring.svg).
-2. Connect laptop and ESP32 to the same **2.4 GHz Wi-Fi**. Avoid guest networks with client isolation.
-3. Install VS Code + PlatformIO extension. Open `firmware/esp32` as a project.
-4. Copy `secrets.example.h` to `secrets.h`. Enter Wi-Fi credentials and set
-   `BACKEND_URL` to `http://YOUR_LAPTOP_IPV4:5000/api/readings`. On Windows find IPv4
-   with `ipconfig`; on Linux use `hostname -I`. `localhost` on ESP32 does not mean the laptop.
-5. Select ESP32 Dev Module (`esp32dev`), plug in USB, then Build / Upload / Monitor.
-   The serial monitor should print `SHELF_01 ... -> HTTP 201` for each sensor.
-   If upload stalls, hold BOOT while upload begins and release once connected.
-6. Allow Python inbound TCP 5000 on your **private** network if the OS firewall prompts.
-7. Stop the simulator. Use **Assign / calibrate** on each card to enter the product name,
-   measured full and empty distances, and low-stock percentage.
-8. Remove products in the chosen controlled geometry and watch the card / restock queue update.
-
-Optional CLI firmware commands (from `firmware/esp32`):
-```bash
-python -m platformio run
-python -m platformio run --target upload
-python -m platformio device monitor
+```powershell
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r requirements-device.txt
+.venv\Scripts\python.exe -m backend.app
 ```
 
-## Included behavior
-- Independent product assignment and calibration for each shelf.
-- Full / in-stock / low / empty classification and approximate fill percentage.
-- Backend moving average over five valid readings; no duplicate firmware averaging.
-- Sensor faults and offline states never become empty-stock estimates.
-- Restock alert deduplication, low→empty escalation, recovery resolution.
-- Last 50 samples chart and persistent history; calibration changes preserve history.
-- Waiting and uncalibrated shelves appear even before telemetry arrives.
-- Visible simulated-versus-hardware source labels.
-- Three sequential ultrasonic pings with quiet gaps to reduce crosstalk.
-- Optional write authentication: set `STOREWATCH_API_KEY` before starting the backend
-  and enter the same key in firmware / calibration dialog / simulator environment.
-  Linux: `export STOREWATCH_API_KEY=your-key`; Windows PowerShell:
-  `$env:STOREWATCH_API_KEY="your-key"`. Default is open for a trusted LAN demo.
+Open **http://localhost:5000**. The dashboard, API, simulator controls and hardware
+guide share the same server. Keep it running; updates poll every two seconds.
 
-## What the sensor actually measures
-Ultrasonic ranging observes the nearest reflecting surface in its beam, not every
-item on a shelf. The inexpensive demonstration uses a **vertical stack of identical
-flat packets or boxes in each compartment**, with a downward-facing sensor above it.
-A growing stack gives a smaller distance. Empty shelf gives the largest distance.
-Loose bottles side by side can remain the same height as stock is removed and will
-not yield reliable fill estimates. Use a guided lane / constrained stack; label
-outputs as estimates and explain this limitation in the presentation.
+## Try it before building
 
-For a bigger store, use one sensor per lane you want to observe, and more ESP32
-boards for extra groups of shelves. Product assignment is manual, not recognition.
+In the dashboard's **Test bench**, select a row, click **Use demo calibration**, then
+send simulated distances. Try 5 cm (full), 26 cm (low), 30 cm (empty), and the sensor
+fault checkbox. Repeat readings to settle the five-sample average. Demo calibration
+and simulated data are labeled independently. Do not run physical telemetry while
+simulating. Use Assign / calibrate to enter real measurements before the physical demo.
 
-## Validation and documentation
-```bash
+The CLI simulator is also available:
+
+```powershell
+python scripts/simulate.py --calibrate-demo --cycles 10
+python scripts/simulate.py --scenario empty --cycles 6
+python scripts/simulate.py --scenario fault --cycles 2
+```
+
+## Hardware and final setup
+
+Read the **[complete hardware build and setup guide](docs/hardware.md)**, also
+available at **http://localhost:5000/setup-guide**. It includes the parts list,
+cardboard dimensions, sensor placement, electrical details, firmware flashing,
+Wi-Fi configuration, calibration and a physical acceptance checklist.
+
+- [Two-sensor connection map](docs/wiring.svg)
+- [Cardboard prototype layout](docs/prototype.svg)
+
+| Location | Channel ID | Sensor | TRIG | ECHO through its own divider |
+|---|---|---|---:|---:|
+| RACK_01 / Row 1 | SHELF_01 | US_01 | GPIO25 | GPIO32 |
+| RACK_01 / Row 2 | SHELF_02 | US_02 | GPIO26 | GPIO33 |
+
+Each HC-SR04 uses regulated 5 V and common GND. **Never connect its 5 V Echo directly
+to ESP32**: ECHO → 1 kΩ → GPIO junction → 2 kΩ → GND. Check the board power pin and
+actual divider voltage; full instructions and primary references are in the guide.
+
+## Product tags and controller behavior
+
+Use **Assign / calibrate** to enter a printed SKU/barcode and product name on a row.
+Tags are manual assignments, optionally typed by a USB barcode scanner connected to
+the laptop. No RFID hardware is included. Ultrasonic ranging cannot identify products.
+The ESP32 fetches `/api/devices/ESP32_01/config` at startup and every ten seconds;
+it learns sensor → shelf → row → product tag and includes sensor/tag IDs in telemetry.
+Wrong devices, sensors, stale tags and unregistered/retired channels are rejected.
+
+Open `firmware/esp32` in PlatformIO. Copy `secrets.example.h` to `secrets.h`, enter
+Wi-Fi credentials and `http://LAPTOP_IPV4:5000/api/readings`, build/upload and watch
+serial output at 115200 baud. Use a shared 2.4 GHz LAN; localhost on the ESP32 is not
+the laptop. Firmware dependencies are pinned in `platformio.ini`.
+
+## What the stock estimate means
+
+For the cardboard demo, use two guided lanes with products toward the front and a
+flat sliding follower behind them. Rear-mounted sensors measure the distance to the
+follower. Manually slide it against remaining products after removal. Calibrate the
+full and empty stops; approximately 5 cm and 30 cm are examples, not actual measurements.
+Loose bottles/packets without controlled geometry can return misleading echoes.
+Outputs are **fill estimates, not exact item counts**. See the guide for an alternative
+vertical-stack geometry and physical validation requirements.
+
+Per-row calibration and tags, reading history and alerts persist in SQLite. Faults
+never mean empty; offline rows lose their current fill estimate after 60 seconds.
+Saving row settings retains history and clears alerts belonging to the old assignment.
+Synthetic demo values are visibly labeled until replaced by measured calibration.
+Existing databases migrate automatically; the old third demo channel is retired,
+with its history retained. Existing product names and calibration values are preserved;
+legacy calibration is marked as demo/unverified until measured on the new rig.
+
+## Validation and configuration
+
+```powershell
 python -m pytest -q
+node --check backend/static/app.js
 ```
-- [Hardware, mounting, costs and connections](docs/hardware.md)
-- [Visual wiring diagram](docs/wiring.svg)
-- [Architecture and stock model](docs/architecture.md)
-- [API contract](docs/api.md)
-- [Demo and physical verification checklist](docs/testing.md)
 
-Use `requirements-device.txt` for this lean application. `requirements.txt` retains
-optional analytics and legacy Streamlit / MQTT dependencies. The old MQTT client
-files are retained for reference and excluded from the firmware build. HTTP is the
-working default. Run a single backend process; in-memory filtering is per process.
-This is a local prototype, not a publicly exposed production server.
+- [Architecture](docs/architecture.md)
+- [API](docs/api.md)
+- [Testing and demo checklist](docs/testing.md)
+
+Optional write key: set `STOREWATCH_API_KEY` before starting the server and use the
+same value in firmware, simulator environment and browser settings/test bench. Default
+is open for a trusted LAN demonstration. Read endpoints remain LAN-accessible.
+Set `STOREWATCH_DB` to use a different SQLite file. Use one backend process because
+filtering is in memory. This is a local prototype; physical accuracy must be verified
+on your assembled rig. Legacy Streamlit/MQTT and analytics modules are retained for
+reference; the supported application is the Flask dashboard at `/`.

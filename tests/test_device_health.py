@@ -9,13 +9,13 @@ def test_recent_reading_is_online():
         "/api/readings",
         json={
             "device_id": "ESP32_01",
-            "shelf_id": "SHELF_ONLINE_TEST",
+            "shelf_id": "SHELF_01",
             "sensor_type": "ultrasonic",
             "distance_cm": 3.0,
         },
     )
     devices = client.get("/api/devices").json
-    dev = next(d for d in devices if d["shelf_id"] == "SHELF_ONLINE_TEST")
+    dev = next(d for d in devices if d["shelf_id"] == "SHELF_01")
     assert dev["status"] == "ONLINE"
 
 
@@ -25,13 +25,13 @@ def test_stale_reading_is_offline():
     client.post(
         "/api/readings",
         json={
-            "device_id": "ESP32_02",
-            "shelf_id": "SHELF_OFFLINE_TEST",
+            "device_id": "ESP32_01",
+            "shelf_id": "SHELF_02",
             "sensor_type": "ultrasonic",
             "distance_cm": 3.0,
             "timestamp": stale_ts,
         },
     )
     devices = client.get("/api/devices").json
-    dev = next(d for d in devices if d["shelf_id"] == "SHELF_OFFLINE_TEST")
+    dev = next(d for d in devices if d["shelf_id"] == "SHELF_02")
     assert dev["status"] == "OFFLINE"

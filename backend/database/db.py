@@ -7,6 +7,7 @@ Schema matches Section 15 of the project spec:
 
 import sqlite3
 import os
+import re
 from pathlib import Path
 
 DB_PATH = Path(os.environ.get("STOREWATCH_DB", str(Path(__file__).resolve().parent / "storewatch.db")))
@@ -64,10 +65,31 @@ def init_db():
     conn = get_connection()
     try:
         conn.executescript(SCHEMA)
+        # Add row metadata without discarding existing assignments or telemetry.
+        columns = {r[1] for r in conn.execute('PRAGMA table_info(shelves)')}
+        additions = {'parent_shelf': "TEXT NOT NULL DEFAULT 'RACK_01'",
+                     'row_number': 'INTEGER NOT NULL DEFAULT 1',
+                     'sensor_id': "TEXT NOT NULL DEFAULT ''",
+                     'product_tag': "TEXT NOT NULL DEFAULT ''",
+                     'length_cm': 'REAL NOT NULL DEFAULT 30',
+                     'calibration_source': "TEXT NOT NULL DEFAULT 'measured'",
+                     'active': 'INTEGER NOT NULL DEFAULT 1'}
+        for name, definition in additions.items():
+            if name not in columns:
+                conn.execute(f'ALTER TABLE shelves ADD COLUMN {name} {definition}')
         from backend.config import CONFIG
         for shelf_id, shelf in CONFIG["shelves"].items():
-            conn.execute("INSERT OR IGNORE INTO shelves (shelf_id, product, device_id) VALUES (?, ?, ?)",
-                         (shelf_id, shelf["product"], shelf["device_id"]))
+            conn.execute("INSERT OR IGNORE INTO shelves (shelf_id, product, device_id, product_tag) VALUES (?, ?, ?, ?)",
+                         (shelf_id, shelf["product"], shelf["device_id"], shelf['product_tag']))
+            conn.execute('UPDATE shelves SET parent_shelf=?, row_number=?, sensor_id=?, active=1 WHERE shelf_id=?',
+                         (shelf['parent_shelf'], shelf['row_number'], shelf['sensor_id'], shelf_id))
+            existing = conn.execute('SELECT product, product_tag FROM shelves WHERE shelf_id=?', (shelf_id,)).fetchone()
+            if not existing['product_tag']:
+                tag = re.sub(r'[^A-Z0-9]+', '-', existing['product'].upper()).strip('-')[:50] or 'PRODUCT'
+                conn.execute("UPDATE shelves SET product_tag=?, calibration_source='demo' WHERE shelf_id=?",
+                             (f'{tag}-{shelf["row_number"]:03d}', shelf_id))
+        # Retire the original third demo channel; retain all its history.
+        conn.execute("UPDATE shelves SET active=0 WHERE shelf_id='SHELF_03'")
         conn.commit()
     finally:
         conn.close()

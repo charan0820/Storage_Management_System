@@ -3,7 +3,11 @@
 from flask import Blueprint, jsonify, request
 
 from backend.services.monitoring import process_reading
+from backend.services import monitoring
 from backend.services.alert_service import generate_alert
+from backend.database.db import get_connection
+from backend.config import OFFLINE_SECONDS
+from datetime import datetime, timezone
 from backend.models.readings import (
     get_latest_reading,
     get_all_latest_readings,
@@ -14,6 +18,7 @@ sensor_bp = Blueprint("sensor_routes", __name__)
 
 
 @sensor_bp.route("/api/readings", methods=["POST"])
+@monitoring.synchronized
 def post_reading():
     """Ingest one telemetry payload from an ESP32 (or a simulator).
 
@@ -35,12 +40,25 @@ def post_reading():
     if missing:
         return jsonify({"error": f"Missing fields: {sorted(missing)}"}), 400
 
+    if not isinstance(payload['shelf_id'], str):
+        return jsonify(error='shelf_id must be a string'), 400
+    conn = get_connection()
+    try:
+        known = conn.execute('SELECT updated_at FROM shelves WHERE shelf_id=? AND active=1', (payload['shelf_id'],)).fetchone()
+    finally:
+        conn.close()
+    if not known:
+        return jsonify(error='Unknown or retired row'), 400
+
     try:
         processed = process_reading(payload)
     except (ValueError, TypeError) as e:
         return jsonify({"error": str(e)}), 400
 
-    alert = generate_alert(processed["shelf_id"], processed["status"])
+    age = (datetime.now(timezone.utc) - datetime.fromisoformat(processed['timestamp'])).total_seconds()
+    # Historical imports must not create/resolve current stock alerts.
+    current = age <= OFFLINE_SECONDS and (not known['updated_at'] or processed['timestamp'] > known['updated_at'])
+    alert = generate_alert(processed["shelf_id"], processed["status"]) if current else None
     processed["alert_generated"] = alert is not None
 
     return jsonify(processed), 201
